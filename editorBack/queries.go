@@ -1,7 +1,7 @@
 package main
 
 //queryAllPrograms save query to get all programs
-const getAllPrograms string = `
+const queryAllPrograms string = `
 {
 	queryAllPrograms(func: has(Code)) {
 		uid
@@ -10,7 +10,7 @@ const getAllPrograms string = `
 }`
 
 // queryProgramByUid save query to get one program
-const getProgramByUid string = `
+const queryProgramByUid string = `
 {
 	node(func: uid(%s)) {
 	  uid
