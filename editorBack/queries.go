@@ -21,3 +21,12 @@ const queryProgramByUid string = `
 	  }
 	}
 }`
+
+//queryAllPrograms save query to get all programs
+const queryPaginationPrograms string = `
+{
+	queryPrograms(func: has(Code), first:2, after:%s) {
+		uid
+		Code
+	}
+}`

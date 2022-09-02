@@ -45,6 +45,9 @@ func main() {
 	//get all programs
 	r.Get("/programs", getPrograms)
 
+	//get all programs
+	r.Get("/page/{uid}", getProgramsPage)
+
 	//save programs
 	r.Post("/programs", addProgram)
 
@@ -114,20 +117,16 @@ func addProgram(w http.ResponseWriter, r *http.Request) {
 func getProgram(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	var rawCode Code
+	dateParam := chi.URLParam(r, "uid")
 
-	err := json.NewDecoder(r.Body).Decode(&rawCode)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	query := getQuery(rawCode.Uid)
+	query := getQuery(dateParam)
 	dgClient := newClient()
 	txn := dgClient.NewTxn()
 
 	resp, err := txn.Query(context.Background(), query)
 	if err != nil {
-		log.Fatal(err)
+		//log.Fatal(err)
+		w.Write([]byte("Error2!!"))
 	}
 
 	w.Write(resp.Json)
@@ -165,7 +164,30 @@ func runProgram(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(string(out))
 }
 
+// getProgram get one program by uid
+func getProgramsPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	dateParam := chi.URLParam(r, "uid")
+
+	query := getQueryPagination(dateParam)
+	dgClient := newClient()
+	txn := dgClient.NewTxn()
+
+	resp, err := txn.Query(context.Background(), query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	w.Write(resp.Json)
+}
+
 //getQuery builds the query that executes by getPrograms and getProgram
 func getQuery(uid string) string {
 	return fmt.Sprintf(queryProgramByUid, uid)
+}
+
+//getQuery pagination get programs
+func getQueryPagination(uid string) string {
+	return fmt.Sprintf(queryPaginationPrograms, uid)
 }
