@@ -20,6 +20,11 @@ type Code struct {
 	Uid  string   `json:"uid"`
 }
 
+type Err struct {
+	Message   string `json:"message"`
+	CodeError int    `json:"codeError"`
+}
+
 func main() {
 	port := "3000"
 	r := chi.NewRouter()
@@ -46,16 +51,16 @@ func main() {
 	r.Get("/programs", getPrograms)
 
 	//get all programs
-	r.Get("/page/{uid}", getProgramsPage)
+	r.Get("/programs-page/{uid}", getProgramsPage)
 
 	//save programs
 	r.Post("/programs", addProgram)
 
 	//get program
-	r.Get("/program/{uid}", getProgram)
+	r.Get("/programs/{uid}", getProgram)
 
 	//run program
-	r.Post("/run/program", runProgram)
+	r.Post("/program/run", runProgram)
 
 	err := http.ListenAndServe(":"+port, r)
 	if err != nil {
@@ -66,15 +71,16 @@ func main() {
 // getPrograms get all the stored programs in the database
 func getPrograms(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-
 	dgClient := newClient()
 	txn := dgClient.NewTxn()
 
 	resp, err := txn.Query(context.Background(), queryAllPrograms)
 	if err != nil {
-		log.Fatal(err)
+		HTTPError(w, r, http.StatusNotFound, err.Error(), 1)
+		return
 	}
 
+	JSON(w, r, http.StatusOK, nil)
 	w.Write(resp.Json)
 }
 
@@ -86,14 +92,16 @@ func addProgram(w http.ResponseWriter, r *http.Request) {
 
 	err := json.NewDecoder(r.Body).Decode(&rawCode)
 	if err != nil {
-		log.Fatal(err)
+		HTTPError(w, r, http.StatusBadRequest, err.Error(), 2)
+		return
 	}
 
 	p := Code{Code: rawCode.Code}
 
 	pb, err := json.Marshal(p)
 	if err != nil {
-		log.Fatal(err)
+		HTTPError(w, r, http.StatusBadRequest, err.Error(), 3)
+		return
 	}
 
 	dgClient := newClient()
@@ -106,11 +114,12 @@ func addProgram(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := txn.Mutate(context.Background(), mu)
 	if err != nil {
-		log.Fatal(err)
+		HTTPError(w, r, http.StatusBadRequest, err.Error(), 4)
+		return
 	}
 
+	JSON(w, r, http.StatusCreated, nil)
 	w.Write(resp.Json)
-
 }
 
 // getProgram get one program by uid
@@ -125,43 +134,12 @@ func getProgram(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := txn.Query(context.Background(), query)
 	if err != nil {
-		//log.Fatal(err)
-		w.Write([]byte("Error2!!"))
-	}
-
-	w.Write(resp.Json)
-}
-
-// runProgram executes the program
-func runProgram(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	var rawCode Code
-
-	err := json.NewDecoder(r.Body).Decode(&rawCode)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	raw := []byte(rawCode.Code[0])
-
-	err = os.WriteFile("archivoPrueba.py", raw, 0644)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	cmd := exec.Command("C:\\Usuarios\\Carranza\\AppData\\Local\\Programs\\Python\\Python310\\python.exe", "./archivoPrueba.py")
-
-	out, err := cmd.Output()
-	if err != nil {
-		err = json.NewEncoder(w).Encode("Syntax error")
-		if err != nil {
-			log.Fatal(err)
-		}
+		HTTPError(w, r, http.StatusNotFound, err.Error(), 5)
 		return
 	}
 
-	json.NewEncoder(w).Encode(string(out))
+	JSON(w, r, http.StatusOK, nil)
+	w.Write(resp.Json)
 }
 
 // getProgram get one program by uid
@@ -176,10 +154,48 @@ func getProgramsPage(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := txn.Query(context.Background(), query)
 	if err != nil {
-		log.Fatal(err)
+		HTTPError(w, r, http.StatusNotFound, err.Error(), 6)
+		return
 	}
 
+	JSON(w, r, http.StatusOK, nil)
 	w.Write(resp.Json)
+}
+
+// runProgram executes the program
+func runProgram(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	var rawCode Code
+
+	err := json.NewDecoder(r.Body).Decode(&rawCode)
+	if err != nil {
+		HTTPError(w, r, http.StatusBadRequest, err.Error(), 7)
+		return
+	}
+
+	raw := []byte(rawCode.Code[0])
+
+	err = os.WriteFile("archivoPrueba.py", raw, 0644)
+	if err != nil {
+		HTTPError(w, r, http.StatusBadRequest, err.Error(), 8)
+		return
+	}
+
+	cmd := exec.Command("C:\\Users\\Carranza\\AppData\\Local\\Programs\\Python\\Python310\\python.exe", "./archivoPrueba.py")
+
+	out, err := cmd.Output()
+	if err != nil {
+		err = json.NewEncoder(w).Encode("Syntax error")
+		if err != nil {
+			HTTPError(w, r, http.StatusBadRequest, err.Error(), 9)
+			return
+		}
+		return
+	}
+
+	JSON(w, r, http.StatusOK, nil)
+	json.NewEncoder(w).Encode(string(out))
 }
 
 //getQuery builds the query that executes by getPrograms and getProgram
@@ -190,4 +206,34 @@ func getQuery(uid string) string {
 //getQuery pagination get programs
 func getQueryPagination(uid string) string {
 	return fmt.Sprintf(queryPaginationPrograms, uid)
+}
+
+//Errors
+func HTTPError(w http.ResponseWriter, r *http.Request, statusCode int, message string, codeError int) error {
+	error := Err{
+		Message:   message,
+		CodeError: codeError,
+	}
+
+	return JSON(w, r, statusCode, error)
+}
+
+func JSON(w http.ResponseWriter, r *http.Request, statusCode int, data interface{}) error {
+	//no hay que serializar es decir convertir a segmento de bytes
+	if data == nil {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(statusCode)
+		return nil
+	}
+
+	// si hay que serializar
+	bytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(statusCode)
+	w.Write(bytes)
+	return nil
 }
