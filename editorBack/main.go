@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,27 +12,33 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/joho/godotenv"
 )
 
+//Code is the program code structure
 type Code struct {
-	Code []string `json:"Code"`
+	Code []string `json:"code"`
 	Uid  string   `json:"uid"`
 }
 
+//Err is the error's response structure
 type Err struct {
 	Message   string `json:"message"`
 	CodeError int    `json:"codeError"`
 }
 
 func main() {
-	port := "3000"
+	loadEnv()
+	port := os.Getenv("PORT")
+	host := os.Getenv("HOST")
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger,
 		middleware.Recoverer,
 	)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   []string{host},
 		AllowedMethods:   []string{"GET", "PUT", "POST", "DELETE", "HEAD", "OPTION"},
 		AllowedHeaders:   []string{"User-Agent", "Content-Type", "Accept", "Accept-Encoding", "Accept-Language", "Cache-Control", "Connection", "DNT", "Host", "Origin", "Pragma", "Referer"},
 		ExposedHeaders:   []string{"Link"},
@@ -64,7 +69,15 @@ func main() {
 
 	err := http.ListenAndServe(":"+port, r)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Printf("Error listen port: %s", err)
+	}
+}
+
+//loadEnv load environment variables
+func loadEnv() {
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Printf("Error load file .env: %s", err)
 	}
 }
 
@@ -82,9 +95,10 @@ func getPrograms(w http.ResponseWriter, r *http.Request) {
 
 	JSON(w, r, http.StatusOK, nil)
 	w.Write(resp.Json)
+
 }
 
-//addProgram save the program in the database
+//addProgram add the program in the database
 func addProgram(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -142,7 +156,7 @@ func getProgram(w http.ResponseWriter, r *http.Request) {
 	w.Write(resp.Json)
 }
 
-// getProgram get one program by uid
+// getProgram get a number of programs from a certain uid
 func getProgramsPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -176,24 +190,41 @@ func runProgram(w http.ResponseWriter, r *http.Request) {
 
 	raw := []byte(rawCode.Code[0])
 
-	err = os.WriteFile("archivoPrueba.py", raw, 0644)
+	loadEnv()
+	file := os.Getenv("FILE_TMP")
+	cmdUrl := os.Getenv("CMD_RUN")
+	dir := os.Getenv("DIR_TMP")
+
+	f, err := os.CreateTemp(dir, file+".*.py")
+	if err != nil {
+		HTTPError(w, r, http.StatusNotFound, err.Error(), 1)
+		return
+	}
+
+	err = os.WriteFile(f.Name(), raw, 0644)
 	if err != nil {
 		HTTPError(w, r, http.StatusBadRequest, err.Error(), 8)
 		return
 	}
 
-	cmd := exec.Command("C:\\Users\\Carranza\\AppData\\Local\\Programs\\Python\\Python310\\python.exe", "./archivoPrueba.py")
+	cmd := exec.Command(cmdUrl, f.Name())
 
 	out, err := cmd.Output()
+
 	if err != nil {
 		err = json.NewEncoder(w).Encode("Syntax error")
 		if err != nil {
 			HTTPError(w, r, http.StatusBadRequest, err.Error(), 9)
 			return
 		}
+		f.Close()
+		defer os.Remove(f.Name())
+		JSON(w, r, http.StatusOK, nil)
 		return
 	}
 
+	f.Close()
+	defer os.Remove(f.Name())
 	JSON(w, r, http.StatusOK, nil)
 	json.NewEncoder(w).Encode(string(out))
 }
@@ -203,12 +234,12 @@ func getQuery(uid string) string {
 	return fmt.Sprintf(queryProgramByUid, uid)
 }
 
-//getQuery pagination get programs
+//getQuery builds the query that executes by getProgramsPage
 func getQueryPagination(uid string) string {
 	return fmt.Sprintf(queryPaginationPrograms, uid)
 }
 
-//Errors
+//HTTPError create a new error type Err
 func HTTPError(w http.ResponseWriter, r *http.Request, statusCode int, message string, codeError int) error {
 	error := Err{
 		Message:   message,
@@ -218,15 +249,14 @@ func HTTPError(w http.ResponseWriter, r *http.Request, statusCode int, message s
 	return JSON(w, r, statusCode, error)
 }
 
+//JSON Serialize response in json format
 func JSON(w http.ResponseWriter, r *http.Request, statusCode int, data interface{}) error {
-	//no hay que serializar es decir convertir a segmento de bytes
 	if data == nil {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(statusCode)
 		return nil
 	}
 
-	// si hay que serializar
 	bytes, err := json.Marshal(data)
 	if err != nil {
 		return err

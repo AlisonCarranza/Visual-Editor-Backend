@@ -1,6 +1,6 @@
 package main
 
-//queryAllPrograms save query to get all programs
+//queryAllPrograms get all programs
 const queryAllPrograms string = `
 {
 	queryAllPrograms(func: has(Code)) {
@@ -9,7 +9,7 @@ const queryAllPrograms string = `
 	}
 }`
 
-// queryProgramByUid save query to get one program
+// queryProgramByUid get one program by uid
 const queryProgramByUid string = `
 {
 	node(func: uid(%s)) {
